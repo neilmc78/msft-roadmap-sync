@@ -1,0 +1,4 @@
+@roadmap-sync Fetch today's roadmap updates
+@roadmap-sync Show me all preview items for AKS and Azure SQL
+@roadmap-sync Add items 1, 3, 5 to my Azure DevOps board
+@roadmap-sync Update my product filter to include Azure Functions
