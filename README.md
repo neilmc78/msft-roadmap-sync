@@ -22,17 +22,50 @@ Logic Apps (weekday 07:00 UTC)
 
 ## Repository Structure
 
+### Config files
+
 | File | Purpose |
 | --- | --- |
-| `roadmap-sync-config.json` | Product-to-board mappings and RSS filter config |
-| `agent-instructions.md` | Foundry Agent system prompt — paste into the Foundry portal |
-| `functions/function_app.py` | Azure Functions entry point (`fetch_roadmap` + `ado_operations`) |
-| `deploy-azure-resources.sh` | Provisions all Azure infrastructure and deploys function code |
-| `setup-ado-boards.sh` | Creates ADO teams and area paths from the config |
-| `create-foundry-agent.py` | Creates or updates the Foundry Agent and registers function tools |
-| `playground-test-prompts.md` | Step-by-step test prompts for the Foundry Playground |
-| `SETUP.md` | Full provisioning guide |
-| `.env.example` | Template for local credentials |
+| `roadmap-sync-config.json` | Product-to-board mappings, RSS filter settings (`feeds`, `globalFilters`, `boardMappings`). Edit this to change which products sync to which boards. |
+| `.env.example` | Template for local credentials — copy to `.env` and fill in before running any scripts. Never committed. |
+
+### Agent
+
+| File | Purpose |
+| --- | --- |
+| `agent-instructions.md` | Foundry Agent system prompt. Defines the sync workflow, work item template (title, HTML description, tags), and routing rules. Deployed via `create-foundry-agent.py`. |
+| `create-foundry-agent.py` | Creates or updates the Foundry Agent in Azure AI Foundry. Registers `fetch_roadmap` and `ado_operations` as OpenAPI tools and pushes the latest instructions. |
+
+### Azure Functions
+
+| File | Purpose |
+| --- | --- |
+| `functions/function_app.py` | Python Azure Functions entry point. Contains two HTTP-triggered functions: `fetch_roadmap` (fetches RSS feeds, filters by date/status/product, resolves board routing) and `ado_operations` (searches for duplicate work items by tag and creates new Epics in ADO). |
+| `functions/requirements.txt` | Python dependencies for the function app. |
+| `functions/host.json` | Azure Functions host configuration. |
+
+### Infrastructure scripts
+
+| File | Purpose |
+| --- | --- |
+| `deploy-azure-resources.sh` | Provisions all Azure resources (Resource Group, Storage, App Insights, Function App, Azure OpenAI with GPT-4o, Logic App scaffold) and deploys the function code. Idempotent — safe to re-run. |
+| `setup-ado-boards.sh` | Creates ADO teams and area paths from `boardMappings` in the config. Updates `roadmap-sync-config.json` with the resolved `areaPath` values. |
+| `configure-logic-app.sh` | Deploys the full Logic App workflow definition: recurrence trigger, agent thread/run creation, poll-until-complete loop, and final message retrieval. Re-run after any config change. |
+
+### Documentation
+
+| File | Purpose |
+| --- | --- |
+| `SETUP.md` | Step-by-step provisioning guide covering all six setup stages. |
+| `SOP.md` | Operator runbook — common tasks like changing the sync window, adding boards, rotating the ADO PAT, and diagnosing failures. |
+| `playground-test-prompts.md` | Structured test prompts for the Azure AI Foundry Playground to validate each component before enabling the schedule. |
+| `prompts.txt` | Example invocation prompts for the GitHub Copilot interactive agent. |
+
+### GitHub Copilot agent (optional)
+
+| File | Purpose |
+| --- | --- |
+| `.github/agents/roadmap-sync.agent.md` | Copilot agent definition for on-demand interactive triage sessions — an alternative to the automated Logic App flow. |
 
 ## Boards
 
@@ -48,6 +81,8 @@ Items are routed to ADO boards based on product. All boards live in a single ADO
 | General | Fallback for all other products |
 
 ## Quick Start
+
+> **For a complete walkthrough**, see [SETUP.md](SETUP.md). It covers every provisioning step in detail — including Azure resource configuration, Foundry Hub and Project setup, agent tool registration, Logic App deployment, and end-to-end verification. The steps below are a condensed overview.
 
 ### Prerequisites
 
