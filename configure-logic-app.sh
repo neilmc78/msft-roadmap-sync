@@ -24,6 +24,7 @@ set -euo pipefail
 RESOURCE_GROUP="rg-roadmap-sync"
 LOGIC_APP="la-roadmap-sync"
 OPENAI_ACCOUNT="aoai-roadmap-sync"
+FOUNDRY_HUB="hub-roadmap-sync"   # AI Foundry Hub name (ML workspace)
 SUBSCRIPTION_ID=""
 
 # ============================================================
@@ -47,9 +48,22 @@ log "Preflight checks"
 # Load .env
 FOUNDRY_ENDPOINT=$(grep -E "^AZURE_FOUNDRY_ENDPOINT=" .env 2>/dev/null | cut -d'=' -f2-) || true
 AGENT_ID=$(grep -E "^AZURE_AGENT_ID=" .env 2>/dev/null | cut -d'=' -f2-) || true
+FOUNDRY_API_KEY=$(grep -E "^AZURE_FOUNDRY_API_KEY=" .env 2>/dev/null | cut -d'=' -f2-) || true
 
 if [[ -z "$FOUNDRY_ENDPOINT" ]]; then
   fail "AZURE_FOUNDRY_ENDPOINT not found in .env. Add it and re-run."
+fi
+
+if [[ -z "$FOUNDRY_API_KEY" ]]; then
+  echo ""
+  warn "AZURE_FOUNDRY_API_KEY not found in .env"
+  warn "Find it at: ai.azure.com → your project → Settings → API keys"
+  echo -n "  Enter Foundry API key (input hidden): "
+  read -r -s FOUNDRY_API_KEY
+  echo ""
+  if [[ -z "$FOUNDRY_API_KEY" ]]; then
+    fail "Foundry API key is required."
+  fi
 fi
 
 if [[ -z "$AGENT_ID" ]]; then
@@ -100,45 +114,70 @@ LOGIC_APP_PRINCIPAL=$(az resource show \
 ok "Managed Identity enabled — principal: $LOGIC_APP_PRINCIPAL"
 
 # ============================================================
-# 2. Grant Cognitive Services User role on Azure OpenAI
+# 2. Grant roles to Logic App Managed Identity
 # ============================================================
 
-log "Granting Cognitive Services User role to Logic App identity"
+log "Granting roles to Logic App Managed Identity"
+
+# The Managed Identity service principal takes a moment to propagate in Entra ID.
+# Retry role assignments up to 10 times with a 10s wait between attempts.
+_assign_role() {
+  local ROLE="$1"
+  local SCOPE="$2"
+  local LABEL="$3"
+
+  EXISTING=$(az role assignment list \
+    --assignee "$LOGIC_APP_PRINCIPAL" \
+    --role "$ROLE" \
+    --scope "$SCOPE" \
+    --query "[0].id" -o tsv 2>/dev/null) || true
+
+  if [[ -n "$EXISTING" ]]; then
+    ok "$LABEL already assigned — skipping"
+    return
+  fi
+
+  warn "Waiting for Managed Identity to propagate in Entra ID..."
+  RETRIES=10
+  for i in $(seq 1 $RETRIES); do
+    if az role assignment create \
+        --assignee "$LOGIC_APP_PRINCIPAL" \
+        --role "$ROLE" \
+        --scope "$SCOPE" \
+        --output none 2>/dev/null; then
+      ok "$LABEL granted"
+      return
+    fi
+    if [[ $i -eq $RETRIES ]]; then
+      fail "Failed to assign $LABEL after $RETRIES attempts. Try running the script again."
+    fi
+    warn "Attempt $i/$RETRIES failed — retrying in 10s..."
+    sleep 10
+  done
+}
 
 OPENAI_RESOURCE_ID=$(az cognitiveservices account show \
   --name "$OPENAI_ACCOUNT" \
   --resource-group "$RESOURCE_GROUP" \
   --query id -o tsv)
 
-# The Managed Identity service principal takes a moment to propagate in Entra ID.
-# Retry the role assignment up to 10 times with a 10s wait between attempts.
-EXISTING=$(az role assignment list \
-  --assignee "$LOGIC_APP_PRINCIPAL" \
-  --role "Cognitive Services User" \
-  --scope "$OPENAI_RESOURCE_ID" \
-  --query "[0].id" -o tsv 2>/dev/null) || true
+# Get the Foundry Hub (ML workspace) resource ID — this is where agent permissions are enforced
+FOUNDRY_HUB_ID=$(az ml workspace show \
+  --name "$FOUNDRY_HUB" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query id -o tsv 2>/dev/null) || true
 
-if [[ -n "$EXISTING" ]]; then
-  ok "Cognitive Services User role already assigned — skipping"
-else
-  warn "Waiting for Managed Identity to propagate in Entra ID..."
-  RETRIES=10
-  for i in $(seq 1 $RETRIES); do
-    if az role assignment create \
-        --assignee "$LOGIC_APP_PRINCIPAL" \
-        --role "Cognitive Services User" \
-        --scope "$OPENAI_RESOURCE_ID" \
-        --output none 2>/dev/null; then
-      ok "Cognitive Services User role granted"
-      break
-    fi
-    if [[ $i -eq $RETRIES ]]; then
-      fail "Failed to assign role after $RETRIES attempts. Try running the script again."
-    fi
-    warn "Attempt $i/$RETRIES failed — retrying in 10s..."
-    sleep 10
-  done
+if [[ -z "$FOUNDRY_HUB_ID" ]]; then
+  warn "Could not find AI Foundry Hub '$FOUNDRY_HUB' — update FOUNDRY_HUB in this script if the name differs"
+  warn "Falling back to resource group scope for Azure AI Developer role"
+  FOUNDRY_HUB_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}"
 fi
+
+# Cognitive Services User — allows calling the Azure OpenAI endpoints
+_assign_role "Cognitive Services User" "$OPENAI_RESOURCE_ID" "Cognitive Services User on Azure OpenAI"
+
+# Azure AI Developer on Foundry Hub — required for Agent Service API (create thread, run, etc.)
+_assign_role "Azure AI Developer" "$FOUNDRY_HUB_ID" "Azure AI Developer on Foundry Hub"
 
 # ============================================================
 # 3. Deploy workflow definition
@@ -198,13 +237,10 @@ cat > "$WORKFLOW_FILE" << WORKFLOW_EOF
           "runAfter": {},
           "inputs": {
             "method": "POST",
-            "uri": "${FOUNDRY_ENDPOINT}/openai/threads?api-version=2025-01-01",
+            "uri": "${FOUNDRY_ENDPOINT}/threads?api-version=2025-05-01",
             "headers": { "Content-Type": "application/json" },
-            "body": {},
-            "authentication": {
-              "type": "ManagedServiceIdentity",
-              "audience": "https://ai.azure.com"
-            }
+            "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ml.azure.com/" },
+            "body": {}
           }
         },
         "Create_Message": {
@@ -212,15 +248,12 @@ cat > "$WORKFLOW_FILE" << WORKFLOW_EOF
           "runAfter": { "Create_Thread": ["Succeeded"] },
           "inputs": {
             "method": "POST",
-            "uri": "@{concat('${FOUNDRY_ENDPOINT}/openai/threads/', body('Create_Thread')['id'], '/messages?api-version=2025-01-01')}",
+            "uri": "@{concat('${FOUNDRY_ENDPOINT}/threads/', body('Create_Thread')['id'], '/messages?api-version=2025-05-01')}",
             "headers": { "Content-Type": "application/json" },
+            "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ml.azure.com/" },
             "body": {
               "role": "user",
               "content": "Run the daily roadmap sync. Fetch items from the last 7 days, check for duplicates, create Epics for new items, and report a summary."
-            },
-            "authentication": {
-              "type": "ManagedServiceIdentity",
-              "audience": "https://ai.azure.com"
             }
           }
         },
@@ -229,14 +262,11 @@ cat > "$WORKFLOW_FILE" << WORKFLOW_EOF
           "runAfter": { "Create_Message": ["Succeeded"] },
           "inputs": {
             "method": "POST",
-            "uri": "@{concat('${FOUNDRY_ENDPOINT}/openai/threads/', body('Create_Thread')['id'], '/runs?api-version=2025-01-01')}",
+            "uri": "@{concat('${FOUNDRY_ENDPOINT}/threads/', body('Create_Thread')['id'], '/runs?api-version=2025-05-01')}",
             "headers": { "Content-Type": "application/json" },
+            "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ml.azure.com/" },
             "body": {
               "assistant_id": "${AGENT_ID}"
-            },
-            "authentication": {
-              "type": "ManagedServiceIdentity",
-              "audience": "https://ai.azure.com"
             }
           }
         },
@@ -258,11 +288,8 @@ cat > "$WORKFLOW_FILE" << WORKFLOW_EOF
               "runAfter": { "Delay_30s": ["Succeeded"] },
               "inputs": {
                 "method": "GET",
-                "uri": "@{concat('${FOUNDRY_ENDPOINT}/openai/threads/', body('Create_Thread')['id'], '/runs/', body('Create_Run')['id'], '?api-version=2025-01-01')}",
-                "authentication": {
-                  "type": "ManagedServiceIdentity",
-                  "audience": "https://ai.azure.com"
-                }
+                "uri": "@{concat('${FOUNDRY_ENDPOINT}/threads/', body('Create_Thread')['id'], '/runs/', body('Create_Run')['id'], '?api-version=2025-05-01')}",
+                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ml.azure.com/" }
               }
             }
           }
@@ -278,11 +305,8 @@ cat > "$WORKFLOW_FILE" << WORKFLOW_EOF
               "type": "Http",
               "inputs": {
                 "method": "GET",
-                "uri": "@{concat('${FOUNDRY_ENDPOINT}/openai/threads/', body('Create_Thread')['id'], '/messages?api-version=2025-01-01&limit=1&order=desc')}",
-                "authentication": {
-                  "type": "ManagedServiceIdentity",
-                  "audience": "https://ai.azure.com"
-                }
+                "uri": "@{concat('${FOUNDRY_ENDPOINT}/threads/', body('Create_Thread')['id'], '/messages?api-version=2025-05-01&limit=1&order=desc')}",
+                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ml.azure.com/" }
               }
             }
           },
