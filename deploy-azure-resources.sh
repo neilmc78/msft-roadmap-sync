@@ -240,7 +240,7 @@ else
   az cognitiveservices account create \
     --name "$OPENAI_ACCOUNT" \
     --resource-group "$RESOURCE_GROUP" \
-    --location "$LOCATION" \
+    --location eastus # "$LOCATION" \
     --kind OpenAI \
     --sku S0 \
     --output none
