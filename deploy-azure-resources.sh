@@ -23,11 +23,11 @@ set -euo pipefail
 
 LOCATION="uksouth"                       # Azure region
 RESOURCE_GROUP="rg-roadmap-sync"
-STORAGE_ACCOUNT="stroadmapsync"          # Globally unique, 3-24 lowercase alphanum
+STORAGE_ACCOUNT="storroadmapsync"          # Globally unique, 3-24 lowercase alphanum
 FUNCTION_APP="func-roadmap-sync"         # Globally unique
-OPENAI_ACCOUNT="aoai-roadmap-sync"
-LOGIC_APP="la-roadmap-sync"
-APP_INSIGHTS="appi-roadmap-sync"
+OPENAI_ACCOUNT="oai-roadmap-sync"
+LOGIC_APP="lapp-roadmap-sync"
+APP_INSIGHTS="appins-roadmap-sync"
 
 # Leave blank to use your current default subscription
 SUBSCRIPTION_ID=""
