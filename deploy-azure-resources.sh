@@ -251,9 +251,9 @@ log "Deploying GPT-4o model"
 az cognitiveservices account deployment create \
   --name "$OPENAI_ACCOUNT" \
   --resource-group "$RESOURCE_GROUP" \
-  --deployment-name gpt-4o-mini \
-  --model-name gpt-4o-mini \
-  --model-version "2024-07-18" \
+  --deployment-name gpt-4.1-mini \
+  --model-name gpt-4.1-mini \
+  --model-version "2025-04-14" \
   --model-format OpenAI \
   --sku-capacity 450 \
   --sku-name GlobalStandard \
