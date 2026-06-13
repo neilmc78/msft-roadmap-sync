@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tunarr</title>
+  <link rel="stylesheet" href="/assets/css/main.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-icon">🎵</span>
+        <span class="brand-name">Tunarr</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#/artists"  class="nav-item" data-view="artists">
+          <span class="nav-icon">🎤</span> Artists
+        </a>
+        <a href="#/wanted"   class="nav-item" data-view="wanted">
+          <span class="nav-icon">🔍</span> Wanted
+          <span class="badge" id="badge-wanted" style="display:none">0</span>
+        </a>
+        <a href="#/queue"    class="nav-item" data-view="queue">
+          <span class="nav-icon">⬇️</span> Queue
+          <span class="badge" id="badge-queue" style="display:none">0</span>
+        </a>
+        <a href="#/history"  class="nav-item" data-view="history">
+          <span class="nav-icon">📋</span> History
+        </a>
+        <a href="#/settings" class="nav-item" data-view="settings">
+          <span class="nav-icon">⚙️</span> Settings
+        </a>
+      </nav>
+    </aside>
+
+    <main id="main-content">
+      <div id="view-container"></div>
+    </main>
+  </div>
+
+  <!-- Add Artist Modal -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal" id="modal-add-artist">
+      <div class="modal-header">
+        <h2>Add Artist</h2>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="search-bar">
+          <input type="text" id="artist-search-input" placeholder="Search for an artist…" autocomplete="off" />
+          <button id="artist-search-btn" class="btn btn-primary">Search</button>
+        </div>
+        <div id="artist-search-results" class="search-results"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Track Search Modal -->
+  <div id="modal-track-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide" id="modal-track-search">
+      <div class="modal-header">
+        <h2 id="track-search-title">Search for Track</h2>
+        <button class="modal-close" id="track-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="track-search-results" class="search-results"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/views/artists.js"></script>
+  <script src="/assets/js/views/artist-detail.js"></script>
+  <script src="/assets/js/views/queue.js"></script>
+  <script src="/assets/js/views/wanted.js"></script>
+  <script src="/assets/js/views/history.js"></script>
+  <script src="/assets/js/views/settings.js"></script>
+  <script src="/assets/js/app.js"></script>
+</body>
+</html>

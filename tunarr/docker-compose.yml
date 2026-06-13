@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  tunarr:
+    build: .
+    container_name: tunarr
+    ports:
+      - "8686:8686"
+    volumes:
+      - ./config:/config
+      - /your/music/library:/music
+    environment:
+      - TUNARR_DATA_DIR=/config
+      - TUNARR_MUSIC_DIR=/music
+      - PUID=1000
+      - PGID=1000
+    restart: unless-stopped
